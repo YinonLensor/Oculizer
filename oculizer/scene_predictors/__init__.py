@@ -1,6 +1,5 @@
 import importlib
 import logging
-from pathlib import Path
 
 logger = logging.getLogger(__name__)
 
@@ -37,7 +36,14 @@ def get_predictor(version='v1'):
         
     except ImportError as e:
         logger.error(f"Failed to import predictor version {version}: {e}")
-        raise ImportError(f"Could not import predictor version '{version}': {e}")
+        message = f"Could not import predictor version '{version}': {e}"
+        if "efficientat" in str(e):
+            message += (
+                " Install predictor dependencies with "
+                "`pip install -e '.[predictor]'` and ensure EfficientAT system "
+                "requirements are available."
+            )
+        raise ImportError(message) from e
     except AttributeError as e:
         logger.error(f"ScenePredictor class not found in {version}: {e}")
         raise ImportError(f"ScenePredictor class not found in version '{version}': {e}")
@@ -46,5 +52,11 @@ def list_available_versions():
     """List all available predictor versions."""
     return AVAILABLE_VERSIONS.copy()
 
-# Backward compatibility - default to v1
-from .v1.predictor import ScenePredictor
+def __getattr__(name):
+    """Lazily expose the default predictor for backward compatibility."""
+    if name == 'ScenePredictor':
+        return get_predictor('v1')
+    raise AttributeError(f"module '{__name__}' has no attribute '{name}'")
+
+
+__all__ = ['AVAILABLE_VERSIONS', 'get_predictor', 'list_available_versions', 'ScenePredictor']

@@ -19,7 +19,6 @@ setup(
         'scikit-learn>=1.0.0',
         'joblib>=1.1.0',
         'torch>=1.13.0',
-        'efficientat>=0.0.1',
         
         # Lighting control
         'pyserial>=3.5',
@@ -28,4 +27,9 @@ setup(
         # Terminal UI (Windows only)
         'windows-curses>=2.3.0; sys_platform == "win32"',
     ],
+    extras_require={
+        'predictor': [
+            'efficientat @ git+https://github.com/LandryBulls/EfficientAT.git@main',
+        ],
+    },
 )
