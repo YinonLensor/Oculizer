@@ -52,6 +52,8 @@ class ScenePredictor:
             sr: Sample rate for audio processing
             seed: Random seed for deterministic behavior
         """
+        print("🎵 Initializing scene predictor v5...")
+        
         # Set deterministic seeds
         set_deterministic_seeds(seed)
         
@@ -67,6 +69,7 @@ class ScenePredictor:
         self.hop_length = 512
         
         # Load preprocessing models
+        print("📊 Loading preprocessing models (scaler, PCA, KMeans)...")
         try:
             self.scaler = joblib.load(self.model_dir / 'scaler.pkl')
             self.pca = joblib.load(self.model_dir / 'pca_95.pkl')
@@ -75,6 +78,7 @@ class ScenePredictor:
             with open(self.model_dir / 'scene_mapping.json', 'r') as f:
                 self.scene_map = json.load(f)
                 
+            print(f"✓ Loaded preprocessing models (PCA: {self.pca.n_components_} components, Clusters: {len(self.scene_map)})")
             logger.info("Successfully loaded v5 preprocessing models")
             logger.info(f"PCA components: {self.pca.n_components_}")
             logger.info(f"Number of clusters: {len(self.scene_map)}")
@@ -83,9 +87,17 @@ class ScenePredictor:
             raise
 
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        print(f"🖥️  Using device: {self.device}")
         
         # Load EfficientAT model
+        if self.device.type == "cpu":
+            print("⏳ Loading neural network model on CPU (this may take 10-30 seconds)...")
+        else:
+            print("⚡ Loading neural network model on GPU...")
+        
         self._load_efficientat_model()
+        print("✓ Neural network model loaded successfully!")
+        print("🎉 Scene predictor ready!\n")
 
     def _load_efficientat_model(self):
         """Load and initialize the EfficientAT model."""
@@ -290,9 +302,8 @@ class ScenePredictor:
             
         except Exception as e:
             logger.error(f"Error in prediction: {e}")
-            # Return a default scene on error
-            return 'party'
-    
+            return ('party', 0) if return_cluster else 'party'
+
     def predict_batch(self, audio_chunks):
         """
         Predict scenes for multiple audio chunks.

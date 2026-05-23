@@ -1,5 +1,5 @@
 # Core dependencies
-numpy>=1.21.0
+numpy>=1.21.0,<2.0.0
 scipy>=1.7.0
 
 # Audio processing
@@ -12,6 +12,7 @@ pydub
 scikit-learn>=1.0.0
 joblib>=1.1.0
 torch>=1.13.0
+efficientat>=0.0.1
 
 # Lighting control
 pyserial>=3.5
@@ -19,6 +20,3 @@ PyDMXControl
 
 # Terminal UI
 windows-curses>=2.3.0; sys_platform == 'win32'
-
-# Optional scene prediction support:
-# pip install -e '.[predictor]'

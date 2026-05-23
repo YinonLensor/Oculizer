@@ -14,11 +14,19 @@ from oculizer.scenes import SceneManager
 def parse_args():
     # Detect OS and set defaults
     is_macos = platform.system() == 'Darwin'
-    default_input = 'blackhole' if is_macos else 'scarlett'
+    
+    # macOS defaults (match oculize.py defaults)
+    if is_macos:
+        default_input = 'scarlett'
+        default_profile = 'mobile'
+    else:
+        # Windows/Linux defaults
+        default_input = 'scarlett'
+        default_profile = 'bbgv'
     
     parser = argparse.ArgumentParser(description='Interactive scene toggler for Oculizer')
-    parser.add_argument('-p', '--profile', type=str, default='bbgv',
-                      help='Profile to use (default: bbgv)')
+    parser.add_argument('-p', '--profile', type=str, default=default_profile,
+                      help=f'Profile to use (default: {default_profile})')
     parser.add_argument('-i', '--input', type=str, default=default_input,
                       help=f'Audio input device to use (default: {default_input}, options: cable, blackhole, scarlett)')
     parser.add_argument('--average-dual-channels', action='store_true',
@@ -79,13 +87,12 @@ def get_index_from_position(row, col, num_columns, total_scenes):
     index = row * num_columns + col
     return min(index, total_scenes - 1)
 
-def main(stdscr, profile, input_device, average_dual_channels):
-    # Initialize scene manager and light controller
-    scene_manager = SceneManager('scenes')
-    scene_manager.set_scene('party')  # Set an initial scene
-    light_controller = Oculizer(profile, scene_manager, input_device, 
-                               average_dual_channels=average_dual_channels)
-    light_controller.start()
+def run_toggle_mode(stdscr, scene_manager, light_controller, profile):
+    """
+    Run toggle mode with existing scene_manager and light_controller.
+    Returns True if should exit program, False if should return to caller.
+    """
+    # Note: light_controller should already be running
 
     # Sort scenes alphabetically
     scene_manager.scenes = sort_scenes_alphabetically(scene_manager.scenes)
@@ -116,7 +123,7 @@ def main(stdscr, profile, input_device, average_dual_channels):
 
             # Display header
             header_text = f"Current scene: {current_scene_name} (Profile: {profile})"
-            commands_text = "Commands: [^Q] Quit  [^R] Reload"
+            commands_text = "Commands: [^T] Return  [^Q] Quit  [^R] Reload"
             if search_string:
                 header_text += f" [Search: {search_string}]"
             
@@ -153,7 +160,7 @@ def main(stdscr, profile, input_device, average_dual_channels):
                 stdscr.addstr(display_y, display_x, scene_str, color)
 
             # Display instructions
-            instructions = "Ctrl+Q to quit, Ctrl+R to reload, type to search, Arrow keys to navigate, Enter to activate"
+            instructions = "Ctrl+T to return, Ctrl+Q to quit, Ctrl+R to reload | Type to search, Arrow keys, Enter to activate"
             stdscr.addstr(max_y-1, 0, instructions, curses.color_pair(6))
 
             stdscr.refresh()
@@ -166,7 +173,9 @@ def main(stdscr, profile, input_device, average_dual_channels):
                     search_string = ""
 
                 if event == 17:  # Ctrl+Q
-                    break
+                    return True  # Exit program
+                elif event == 20:  # Ctrl+T
+                    return False  # Return to oculizer mode
                 elif event == 18:  # Ctrl+R
                     try:
                         scene_manager.reload_scenes()
@@ -215,6 +224,8 @@ def main(stdscr, profile, input_device, average_dual_channels):
                         search_string = ""
                 elif event == 27:  # ESC key
                     search_string = ""
+                    # Note: In standalone toggle.py, there's no prediction mode to revert to
+                    # This is only applicable when run from oculize.py
                 elif event in [curses.KEY_BACKSPACE, 127, 8]:  # Backspace
                     search_string = search_string[:-1]
                     last_search_time = current_time
@@ -234,7 +245,34 @@ def main(stdscr, profile, input_device, average_dual_channels):
             time.sleep(0.01)
 
     finally:
-        print('\033[?1003l')
+        print('\033[?1003l')  # Disable mouse tracking
+        curses.mousemask(0)  # Disable mouse events
+
+def main(stdscr, profile, input_device, average_dual_channels):
+    # Load profile fixtures for scene manager
+    from pathlib import Path
+    profile_fixtures = set()
+    try:
+        profile_path = Path(__file__).resolve().parent / 'profiles' / f'{profile}.json'
+        if profile_path.exists():
+            with open(profile_path, 'r') as f:
+                profile_data = json.load(f)
+                if 'lights' in profile_data:
+                    profile_fixtures = {light['name'] for light in profile_data['lights'] if 'name' in light}
+    except Exception as e:
+        pass  # Fall back to no profile awareness
+    
+    # Initialize scene manager with profile awareness
+    scene_manager = SceneManager('scenes', profile_name=profile, available_fixtures=profile_fixtures)
+    scene_manager.set_scene('party')  # Set an initial scene
+    light_controller = Oculizer(profile, scene_manager, input_device, 
+                               average_dual_channels=average_dual_channels)
+    light_controller.start()
+    
+    try:
+        # Run toggle mode (standalone always exits on Ctrl+Q)
+        run_toggle_mode(stdscr, scene_manager, light_controller, profile)
+    finally:
         light_controller.stop()
         light_controller.join()
         curses.endwin()

@@ -57,14 +57,8 @@ Oculizer is an advanced DMX lighting automation system that creates real-time, m
 git clone https://github.com/LandryBulls/Oculizer.git
 cd oculizer
 
-# Install the base package
+# Install required packages
 pip install -r requirements.txt
-
-# Or install in editable mode
-pip install -e .
-
-# Optional: install scene prediction support (EfficientAT)
-pip install -e '.[predictor]'
 ```
 
 ## Configuration Steps

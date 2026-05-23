@@ -1,17 +1,10 @@
-numpy>=1.21.0
-scipy>=1.7.0
-librosa>=0.9.2
-sounddevice>=0.4.6
-soundfile>=0.11.0
+numpy
+scipy
+sounddevice
+librosa
 pydub
-scikit-learn>=1.0.0
-joblib>=1.1.0
-torch>=1.13.0
-pyserial>=3.5
+scipy
+sounddevice
+soundfile
+scikit-learn
 PyDMXControl
-
-[:sys_platform == "win32"]
-windows-curses>=2.3.0
-
-[predictor]
-efficientat @ git+https://github.com/LandryBulls/EfficientAT.git@main

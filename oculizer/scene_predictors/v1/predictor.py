@@ -39,6 +39,8 @@ class ScenePredictor:
             sr: Sample rate
             seed: Random seed for deterministic behavior
         """
+        print("🎵 Initializing scene predictor v1...")
+        
         # Set deterministic seeds
         set_deterministic_seeds(seed)
         
@@ -48,6 +50,7 @@ class ScenePredictor:
         self.model_dir = Path(model_dir)
         
         # Load preprocessing models
+        print("📊 Loading preprocessing models (scaler, PCA, KMeans)...")
         try:
             self.pca = joblib.load(self.model_dir / 'pca_150.pkl')
             self.scaler = joblib.load(self.model_dir / 'scaler.pkl')
@@ -56,15 +59,24 @@ class ScenePredictor:
             with open(self.model_dir / 'scene_mapping.json', 'r') as f:
                 self.scene_map = json.load(f)
                 
+            print(f"✓ Loaded preprocessing models (PCA: {self.pca.n_components_} components)")
             logger.info("Successfully loaded preprocessing models")
         except Exception as e:
             logger.error(f"Failed to load preprocessing models: {e}")
 
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        print(f"🖥️  Using device: {self.device}")
         self.sr = sr
         
         # Load EfficientAT model
+        if self.device.type == "cpu":
+            print("⏳ Loading neural network model on CPU (this may take 10-30 seconds)...")
+        else:
+            print("⚡ Loading neural network model on GPU...")
+        
         self._load_efficientat_model()
+        print("✓ Neural network model loaded successfully!")
+        print("🎉 Scene predictor ready!\n")
 
 
         
@@ -181,9 +193,8 @@ class ScenePredictor:
             
         except Exception as e:
             logger.error(f"Error in prediction: {e}")
-            # Return a default scene on error
-            return 'party'
-    
+            return ('party', 0) if return_cluster else 'party'
+
     def predict_batch(self, audio_chunks):
         """
         Predict scenes for multiple audio chunks.
