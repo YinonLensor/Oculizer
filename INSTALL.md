@@ -18,7 +18,7 @@ Open a new terminal afterwards so `uv` is on your PATH.
 ## 2. Get the code & install dependencies
 
 ```bash
-git clone https://github.com/<your-account>/Oculizer.git
+git clone https://github.com/YinonLensor/Oculizer.git
 cd Oculizer
 uv sync
 ```
