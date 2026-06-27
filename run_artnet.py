@@ -2,15 +2,16 @@
 """Run Oculizer over Art-Net with the 'yinon' profile, listening to the Xone:24C.
 
 This renders Oculizer's scene engine (mfft/time/bool modulators + scenes) through
-your real fixtures: the 7-channel party light (DMX 1-7) and the disco-ball
-pinspot (DMX 8-13), all on Art-Net universe 0 -> 192.168.2.57.
+your real fixtures: the 7-channel party light (DMX 1-7) and the 9-channel
+disco-ball pinspot (DMX 8-16), all on Art-Net universe 0 -> 192.168.2.15.
 
 Switch scenes by typing the scene's key + Enter. 'r' reloads scenes from disk
 (edit the JSON and see it live). 'q' quits (sends blackout).
 
-Run:
-  cd ~/personal-dev/Oculizer
-  OCULIZER_ARTNET_IP=192.168.2.57 uv run run_artnet.py
+Run (see INSTALL.md):
+  cd Oculizer
+  uv run run_artnet.py
+  # different node IP? OCULIZER_ARTNET_IP=192.168.x.y uv run run_artnet.py
 
 Dependencies come from pyproject.toml (numba is pinned >=0.61 so librosa doesn't
 drag in the ancient numba 0.53.1 that can't build on Python 3.13). For the ML
@@ -21,7 +22,7 @@ import os
 import sys
 
 # Default the node IP so the controller picks Art-Net instead of USB serial.
-os.environ.setdefault("OCULIZER_ARTNET_IP", "192.168.2.57")
+os.environ.setdefault("OCULIZER_ARTNET_IP", "192.168.2.15")
 os.environ.setdefault("OCULIZER_ARTNET_UNIVERSE", "0")
 
 from oculizer.scenes import SceneManager
