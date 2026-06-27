@@ -1,0 +1,27 @@
+{
+    "name": "home_strobe",
+    "description": "Fast strobe with white wash + all pattern LEDs + lasers lit so there's something to flash; ball off",
+    "key_command": "4",
+    "midi": 63,
+    "lights": [
+        {
+            "name": "partylight",
+            "type": "partylight",
+            "modulator": "bool",
+            "strobe": "fast",
+            "color": "white",
+            "pattern": "all",
+            "pattern_spin": 0,
+            "laser_color": "both",
+            "laser_spin": 0
+        },
+        {
+            "name": "discoball",
+            "type": "discoball",
+            "modulator": "bool",
+            "brightness": 0,
+            "color": "white",
+            "strobe": 0
+        }
+    ]
+}

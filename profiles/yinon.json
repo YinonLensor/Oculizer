@@ -1,0 +1,8 @@
+{
+    "name": "yinon",
+    "description": "Home rig over Art-Net. Oculizer assigns DMX addresses sequentially in THIS order: party light (7ch) = DMX 1-7, disco-ball pinspot (9ch mode) = DMX 8-16. Set the pinspot's DIP switch to address 8 to match.",
+    "lights": [
+        {"name": "partylight", "type": "partylight", "n_channels": 7},
+        {"name": "discoball", "type": "discoball", "n_channels": 9}
+    ]
+}

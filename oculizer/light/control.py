@@ -8,10 +8,11 @@ Author: Landry Bulls
 Date: 8/20/24
 """
 
+import os
 import numpy as np
 import sounddevice as sd
 import librosa
-from oculizer.light.enttec_controller import EnttecProController
+from oculizer.light.artnet_controller import ArtnetProController
 from oculizer.light.dmx_config import get_dmx_config
 from oculizer.scenes import SceneManager
 from oculizer.light.mapping import process_light, scale_mfft
@@ -32,7 +33,9 @@ n_channels = {
     'strobe': 2,
     'laser': 10,
     'rockville864': 39,
-    'pinspot': 6
+    'pinspot': 6,
+    'partylight': 7,
+    'discoball': 9
 }
 
 class Oculizer(threading.Thread):
@@ -118,7 +121,9 @@ class Oculizer(threading.Thread):
                 return i
             elif self.input_device == 'cable_output' and 'CABLE Output' in device['name'] and device['max_input_channels'] > 0:
                 return i
-        
+            elif self.input_device == 'xone' and 'XONE' in device['name'].upper() and device['max_input_channels'] > 0:
+                return i
+
         # If device not found, print available devices and raise error
         print("\nAvailable audio input devices:")
         for i, device in enumerate(devices):
@@ -216,7 +221,9 @@ class Oculizer(threading.Thread):
                     return i
                 elif device_name == 'cable_output' and 'CABLE Output' in device['name'] and device['max_input_channels'] > 0:
                     return i
-            
+                elif device_name == 'xone' and 'XONE' in device['name'].upper() and device['max_input_channels'] > 0:
+                    return i
+
             # If device not found, print available devices and raise error
             print("\nAvailable audio input devices:")
             for i, device in enumerate(devices):
@@ -535,6 +542,26 @@ class Oculizer(threading.Thread):
         
         return RGBFixture(name, start_channel, channels, controller)
 
+    def _create_partylight_fixture(self, name, start_channel, channels, controller):
+        """Create a 7ch party-light fixture for EnttecProController / ArtnetProController."""
+        class PartyLightFixture:
+            def __init__(self, name, start_channel, channels, controller):
+                self.name = name
+                self.start_channel = start_channel
+                self.n_channels = channels
+                self.controller = controller
+
+            def set_channels(self, values):
+                # Batched update: write the buffer, then send one DMX packet.
+                for i, value in enumerate(values):
+                    if i < self.n_channels:
+                        channel = self.start_channel + i
+                        if 1 <= channel <= 512:
+                            self.controller.dmx_data[channel] = max(0, min(255, int(value)))
+                self.controller._send_dmx_packet()
+
+        return PartyLightFixture(name, start_channel, channels, controller)
+
     def _create_strobe_fixture(self, name, start_channel, channels, controller):
         """Create a strobe fixture for EnttecProController."""
         class StrobeFixture:
@@ -620,16 +647,25 @@ class Oculizer(threading.Thread):
                 else:
                     print("🔌 Connecting to DMX controller...")
                 
-                # Use EnttecProController for DMXKing ultraDMX MAX
-                # On retry attempts, skip cache and do full port scan
-                skip_cache = (attempt > 0)
-                dmx_config = get_dmx_config(skip_cache=skip_cache)
-                controller = EnttecProController(
-                    port=dmx_config['port'],
-                    baudrate=dmx_config['baudrate'],
-                    timeout=dmx_config['timeout']
-                )
-                print(f"✓ DMX controller connected on {dmx_config['port']}")
+                # Art-Net over UDP if OCULIZER_ARTNET_IP is set, else USB serial.
+                artnet_ip = os.environ.get('OCULIZER_ARTNET_IP')
+                if artnet_ip:
+                    universe = int(os.environ.get('OCULIZER_ARTNET_UNIVERSE', '0'))
+                    controller = ArtnetProController(node_ip=artnet_ip, universe=universe)
+                    print(f"✓ DMX over Art-Net to {artnet_ip} (universe {universe})")
+                else:
+                    # Use EnttecProController for DMXKing ultraDMX MAX (USB serial).
+                    # Imported lazily so the Art-Net path doesn't require pyserial.
+                    from oculizer.light.enttec_controller import EnttecProController
+                    # On retry attempts, skip cache and do full port scan
+                    skip_cache = (attempt > 0)
+                    dmx_config = get_dmx_config(skip_cache=skip_cache)
+                    controller = EnttecProController(
+                        port=dmx_config['port'],
+                        baudrate=dmx_config['baudrate'],
+                        timeout=dmx_config['timeout']
+                    )
+                    print(f"✓ DMX controller connected on {dmx_config['port']}")
                 control_dict = {}
                 curr_channel = 1
                 sleeptime = 0.1
@@ -697,6 +733,28 @@ class Oculizer(threading.Thread):
                         fixture.set_channels([0] * channels)
                         time.sleep(sleeptime)
                         fixture.set_channels([255] * channels)
+                        time.sleep(sleeptime)
+                        fixture.set_channels([0] * channels)
+
+                    elif light['type'] == 'partylight':
+                        channels = n_channels['partylight']
+                        fixture = self._create_partylight_fixture(light['name'], curr_channel, channels, controller)
+                        control_dict[light['name']] = fixture
+                        curr_channel += channels
+                        # quick visible check: wash colour + spinning pattern, then off
+                        fixture.set_channels([0, 24, 140, 128, 0, 0, 0])
+                        time.sleep(sleeptime)
+                        fixture.set_channels([0] * channels)
+
+                    elif light['type'] == 'discoball':
+                        channels = n_channels['discoball']
+                        # 9ch [dimmer, strobe, R, G, B, W, auto, auto, auto]; reuse the
+                        # generic batched-update fixture (it just writes n_channels values).
+                        fixture = self._create_rgb_fixture(light['name'], curr_channel, channels, controller)
+                        control_dict[light['name']] = fixture
+                        curr_channel += channels
+                        # quick visible check: full-dim blue beam, then off
+                        fixture.set_channels([255, 0, 0, 0, 255, 0, 0, 0, 0])
                         time.sleep(sleeptime)
                         fixture.set_channels([0] * channels)
 

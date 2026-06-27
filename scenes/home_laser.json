@@ -1,0 +1,27 @@
+{
+  "name": "home_laser",
+  "description": "Laser-forward: both lasers spinning, wash/pattern dark, ball steady purple",
+  "key_command": "3",
+  "midi": 62,
+  "lights": [
+    {
+      "name": "partylight",
+      "type": "partylight",
+      "modulator": "bool",
+      "color": "off",
+      "pattern": "off",
+      "pattern_spin": 0,
+      "laser_color": "both",
+      "laser_spin": "on",
+      "strobe": 0
+    },
+    {
+      "name": "discoball",
+      "type": "discoball",
+      "modulator": "bool",
+      "brightness": 160,
+      "color": "rainbow",
+      "strobe": 0
+    }
+  ]
+}

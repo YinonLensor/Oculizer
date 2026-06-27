@@ -1,0 +1,33 @@
+{
+  "name": "home_party",
+  "description": "Energetic: red wash, pattern LEDs fill + spin on bass, lasers both spinning, strobe pulses on the beat, ball flashes white",
+  "key_command": "2",
+  "midi": 61,
+  "lights": [
+    {
+      "name": "partylight",
+      "type": "partylight",
+      "modulator": "mfft",
+      "mfft_range": [0, 18],
+      "power_range": [0.3, 2.5],
+      "color": "red",
+      "pattern": "audio",
+      "pattern_spin": "audio",
+      "laser_color": "both",
+      "laser_spin": "on",
+      "strobe": "beat",
+      "strobe_threshold": 2.4,
+      "strobe_level": "medium"
+    },
+    {
+      "name": "discoball",
+      "type": "discoball",
+      "modulator": "mfft",
+      "mfft_range": [0, 18],
+      "power_range": [0.3, 2.5],
+      "brightness_range": [80, 255],
+      "color": "white",
+      "strobe": 0
+    }
+  ]
+}

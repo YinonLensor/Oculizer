@@ -67,6 +67,105 @@ def mfft_to_value(mfft_vec, mfft_range, power_range, value_range):
     mfft_mean = np.mean(mfft_vec[mfft_low:mfft_high])
     return power_to_brightness(mfft_mean, power_range, value_range)
 
+# --- Party light (7ch multi-effect: wash + pattern roller + laser + strobe) ---
+# IMPORTANT: most channels are *quantized selectors*, not continuous dimmers.
+# Fixture channel layout (1-indexed on the fixture itself):
+#   1 strobe (ALL elements). Steps of 27: 0-26 off, then every +27 doubles the
+#     rate up to 255. Strobe only flashes whatever is already lit.
+#   2 wash LED colour (2 lamps, no pattern). Steps of 16: 0-15 off, then each
+#     +16 is the next colour: red, green, blue, white, yellow, magenta, pink...
+#   3 pattern-roller LEDs. 0-79 a single LED, 80+ a growing subset, 255 all on.
+#   4 pattern-roller rotation. BOOL: 0-25 still, >25 spins at constant speed.
+#   5 laser colour. Quantized: off / red / green / both.
+#   6 laser-roller rotation. BOOL: 0-25 still, >25 spins at constant speed.
+#   7 auto mode (>25 runs built-in presets). KEPT 0 — using it loses control.
+#
+# Scene fields: color (name|"random"|int), pattern (off|single|some|all|"audio"|
+# "random"|int), pattern_spin (on/off/"audio"/int), laser_color (off|red|green|
+# both|random), laser_spin (on/off/"audio"/int), strobe (off|slow|medium|fast|max|
+# "beat"|"audio"|"random"|int) with strobe_threshold / strobe_level for "beat".
+
+PARTY_STROBE_STEP = 27
+PARTY_STROBE_NAMED = {'off': 0, 'slow': 27, 'medium': 81, 'fast': 162, 'max': 243}
+PARTY_COLOR_STEP = 16
+PARTY_COLOR_NAMES = ['off', 'red', 'green', 'blue', 'white', 'yellow', 'magenta', 'pink']
+PARTY_LASER_COLORS = {'off': 0, 'red': 96, 'green': 160, 'both': 224}
+PARTY_PATTERN_NAMED = {'off': 0, 'single': 40, 'some': 140, 'all': 255}
+PARTY_SPIN_ON = 128  # any value >25 spins; 128 = clearly "on"
+
+
+def _norm(power, power_range):
+    lo, hi = power_range[0], power_range[1]
+    if hi <= lo:
+        return 0.0
+    return max(0.0, min(1.0, (power - lo) / (hi - lo)))
+
+
+def _party_color(val):
+    if isinstance(val, str):
+        if val == 'random':
+            return int(np.random.randint(1, len(PARTY_COLOR_NAMES))) * PARTY_COLOR_STEP + 8
+        idx = PARTY_COLOR_NAMES.index(val) if val in PARTY_COLOR_NAMES else 0
+        return idx * PARTY_COLOR_STEP + (8 if idx > 0 else 0)
+    return int(val)
+
+
+def _party_laser(val):
+    if isinstance(val, str):
+        if val == 'random':
+            return random.choice(list(PARTY_LASER_COLORS.values()))
+        return PARTY_LASER_COLORS.get(val, 0)
+    return int(val)
+
+
+def _party_pattern(light, power=0.0, power_range=(0, 1)):
+    p = light.get('pattern', 0)
+    if isinstance(p, str):
+        if p == 'random':
+            return int(np.random.randint(0, 256))
+        if p == 'audio':
+            return power_to_brightness(power, power_range, [0, 255])
+        return PARTY_PATTERN_NAMED.get(p, 0)
+    return int(p)
+
+
+def _party_spin(val, power=0.0, power_range=(0, 1)):
+    """CH4/CH6 are on/off (>25 spins). Return 0 (still) or PARTY_SPIN_ON."""
+    if isinstance(val, str):
+        if val == 'audio':
+            return PARTY_SPIN_ON if _norm(power, power_range) > 0.5 else 0
+        return PARTY_SPIN_ON if val in ('on', 'spin', 'true', 'yes') else 0
+    if isinstance(val, bool):
+        return PARTY_SPIN_ON if val else 0
+    return int(val)
+
+
+def _party_strobe(light, power=0.0, power_range=(0, 1)):
+    s = light.get('strobe', 0)
+    if isinstance(s, str):
+        if s == 'beat':
+            threshold = light.get('strobe_threshold', power_range[1])
+            on = PARTY_STROBE_NAMED.get(light.get('strobe_level', 'fast'), 162)
+            return on if power >= threshold else 0
+        if s == 'audio':
+            band = int(_norm(power, power_range) * 9)  # 0..9 strobe steps
+            return min(255, band * PARTY_STROBE_STEP)
+        if s == 'random':
+            return int(np.random.randint(0, 10)) * PARTY_STROBE_STEP
+        return PARTY_STROBE_NAMED.get(s, 0)
+    return int(s)
+
+
+def _party_channels(strobe=0, color=0, pattern=0, pattern_spin=0, laser=0, laser_spin=0):
+    # [strobe, wash colour, pattern LEDs, pattern spin, laser colour, laser spin, auto=0]
+    return [int(strobe), int(color), int(pattern), int(pattern_spin),
+            int(laser), int(laser_spin), 0]
+
+
+def _fixture_len(light_type):
+    return {'rockville864': 39, 'partylight': 7, 'discoball': 9}.get(light_type, 6)
+
+
 def time_function(t, frequency, function):
     functions = {
         'sine': lambda t, f: np.sin(t * f * 2 * np.pi) * 0.5 + 0.5,
@@ -100,7 +199,29 @@ def process_mfft(light, mfft_vec):
         # Scale color by brightness and keep W at 0
         scaled_color = [int(c * brightness / 255) for c in color]
         return [*scaled_color, 0, brightness, strobe]
-    
+
+    elif light['type'] == 'partylight':
+        lo, hi = int(mfft_range[0]), int(mfft_range[1])
+        power = float(np.mean(mfft_vec[lo:hi]))
+        # Wash colour is a discrete pick; pattern LEDs fill in with audio by default.
+        color_cfg = light.get('color', 'off')
+        color = _party_color(color_cfg) if isinstance(color_cfg, str) else int(color_cfg)
+        return _party_channels(
+            strobe=_party_strobe(light, power, power_range),
+            color=color,
+            pattern=_party_pattern(light, power, power_range),
+            pattern_spin=_party_spin(light.get('pattern_spin', light.get('rotation', 0)), power, power_range),
+            laser=_party_laser(light.get('laser_color', 'off')),
+            laser_spin=_party_spin(light.get('laser_spin', 0), power, power_range),
+        )
+
+    elif light['type'] == 'discoball':
+        # 9ch: [master dimmer, strobe, R, G, B, W, auto, auto, auto]
+        brightness = mfft_to_value(mfft_vec, mfft_range, power_range, value_range)
+        r, g, b = color_to_rgb(light.get('color', 'random'))
+        strobe = int(light.get('strobe', 0))
+        return [brightness, strobe, int(r), int(g), int(b), 0, 0, 0, 0]
+
     elif light['type'] == 'strobe':
         threshold = light.get('threshold', 0.5)
         mfft_mean = np.mean(mfft_vec[mfft_range[0]:mfft_range[1]])
@@ -296,6 +417,29 @@ def process_bool(light):
         # Scale color by brightness and keep W at 0
         scaled_color = [int(c * brightness / 255) for c in color]
         return [*scaled_color, 0, brightness, strobe]
+    elif light['type'] == 'partylight':
+        # Static look (no audio): "beat"/"audio" fall back to off.
+        strobe = light.get('strobe', 0)
+        if strobe in ('beat', 'audio'):
+            strobe = 0
+        else:
+            strobe = _party_strobe(light)
+        return _party_channels(
+            strobe=strobe,
+            color=_party_color(light.get('color', 'off')),
+            pattern=_party_pattern(light),
+            pattern_spin=_party_spin(light.get('pattern_spin', light.get('rotation', 0))),
+            laser=_party_laser(light.get('laser_color', 'off')),
+            laser_spin=_party_spin(light.get('laser_spin', 0)),
+        )
+    elif light['type'] == 'discoball':
+        if light.get('brightness', 'random') == 'random':
+            brightness = np.random.randint(light.get('min_brightness', 0), light.get('max_brightness', 255) + 1)
+        else:
+            brightness = light.get('brightness', 255)
+        r, g, b = color_to_rgb(light.get('color', 'random'))
+        strobe = int(light.get('strobe', 0))
+        return [int(brightness), strobe, int(r), int(g), int(b), 0, 0, 0, 0]
     elif light['type'] == 'strobe':
         speed = np.random.randint(0, 256) if light.get('speed', 'random') == 'random' else light.get('speed', 255)
         brightness = np.random.randint(0, 256) if light.get('brightness', 'random') == 'random' else light.get('brightness', 255)
@@ -401,7 +545,31 @@ def process_time(light, current_time):
         # Scale color by brightness and keep W at 0
         scaled_color = [int(c * value / 255) for c in color]
         return [*scaled_color, 0, value, strobe]
-    
+
+    elif light['type'] == 'partylight':
+        lo = light.get('min_value', light.get('min_brightness', 0))
+        hi = light.get('max_value', light.get('max_brightness', 255))
+        value = int(lo + (hi - lo) * time_function(current_time, light.get('frequency', 1), light.get('function', 'sine')))
+        kw = dict(
+            strobe=_party_strobe(light) if not isinstance(light.get('strobe', 0), str) or light.get('strobe') in PARTY_STROBE_NAMED else 0,
+            color=_party_color(light.get('color', 'off')),
+            pattern=_party_pattern(light),
+            pattern_spin=_party_spin(light.get('pattern_spin', light.get('rotation', 0))),
+            laser=_party_laser(light.get('laser_color', 'off')),
+            laser_spin=_party_spin(light.get('laser_spin', 0)),
+        )
+        target = light.get('target', 'pattern')
+        if target in kw:
+            kw[target] = value
+        return _party_channels(**kw)
+
+    elif light['type'] == 'discoball':
+        value = int(light.get('min_brightness', 0) + (light.get('max_brightness', 255) - light.get('min_brightness', 0))
+                    * time_function(current_time, light.get('frequency', 1), light.get('function', 'sine')))
+        r, g, b = color_to_rgb(light.get('color', 'random'))
+        strobe = int(light.get('strobe', 0))
+        return [value, strobe, int(r), int(g), int(b), 0, 0, 0, 0]
+
     elif light['type'] == 'strobe':
         target = light.get('target', 'both')
         speed_range = light.get('speed_range', [0, 255])
@@ -439,12 +607,12 @@ def process_light(light, mfft_vec, current_time, modifiers=None):
         
         if isinstance(effect_config, str):
             # Simple case: just effect name
-            channels = [0] * 39 if light['type'] == 'rockville864' else [0] * 6  # Initialize channels
+            channels = [0] * _fixture_len(light['type'])  # Initialize channels
             channels = apply_effect(effect_config, channels, mfft_vec, {}, light['name'])
         elif isinstance(effect_config, dict):
             # Advanced case: effect name and config
             effect_name = effect_config.pop('name')
-            channels = [0] * 39 if light['type'] == 'rockville864' else [0] * 6  # Initialize channels
+            channels = [0] * _fixture_len(light['type'])  # Initialize channels
             channels = apply_effect(effect_name, channels, mfft_vec, effect_config, light['name'])
             effect_config['name'] = effect_name  # Restore the name key
     else:
@@ -475,6 +643,9 @@ def process_light(light, mfft_vec, current_time, modifiers=None):
                 channels[1] = int(channels[1] * modifiers['brightness_scale'])  # G
                 channels[2] = int(channels[2] * modifiers['brightness_scale'])  # B
                 channels[4] = int(channels[4] * modifiers['brightness_scale'])  # MASTER_DIMMER
+            elif light['type'] == 'discoball':
+                # 9ch [dimmer, strobe, R, G, B, W, ...]; scale the master dimmer
+                channels[0] = int(channels[0] * modifiers['brightness_scale'])
             elif light['type'] == 'rockville864':
                 # For Rockville, scale all RGB values
                 for i in range(4, 28, 3):  # RGB sections

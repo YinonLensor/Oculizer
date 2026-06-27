@@ -1,0 +1,32 @@
+{
+    "name": "home_ambient",
+    "description": "Chill: blue wash, pattern LEDs breathe with the mids, no spin/laser/strobe, ball drifts blue",
+    "key_command": "1",
+    "midi": 60,
+    "lights": [
+        {
+            "name": "partylight",
+            "type": "partylight",
+            "modulator": "mfft",
+            "mfft_range": [20, 60],
+            "power_range": [0.2, 2.0],
+            "color": "blue",
+            "pattern": "audio",
+            "pattern_spin": 0,
+            "laser_color": "off",
+            "laser_spin": 0,
+            "strobe": 0
+        },
+        {
+            "name": "discoball",
+            "type": "discoball",
+            "modulator": "time",
+            "frequency": 0.08,
+            "function": "sine",
+            "min_brightness": 110,
+            "max_brightness": 200,
+            "color": "blue",
+            "strobe": 0
+        }
+    ]
+}
